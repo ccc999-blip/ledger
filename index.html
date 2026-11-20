@@ -2470,7 +2470,7 @@
       <!-- 核心指標摘要條 -->
       <div class="stats-kpi-strip">
         <div class="stats-kpi-card">
-          <span class="stats-kpi-label">日均支出</span>
+          <span id="kpi-avg-label" class="stats-kpi-label">日均支出</span>
           <span id="kpi-avg-spend" class="stats-kpi-val expense">0 元</span>
           <span id="kpi-avg-sub" class="stats-kpi-sub">0 天區間</span>
         </div>
@@ -5316,19 +5316,7 @@
         const diff = Math.round((todayDt - startDt) / 86400000) + 1;
         return { startDate: formatObjToDateKey(startDt), endDate: todayKey, totalDays: Math.max(1, diff) };
       }
-      if (range === 'cycle') {
-        const lastClear = (appState.logs || []).find(x => x.type === '清空' || x.type === 'clear');
-        if (lastClear && lastClear.date) {
-          const clearDay = String(lastClear.date).split(' ')[0];
-          const cDt = parseDateKeyToObj(clearDay);
-          if (cDt) {
-            const diff = Math.round((todayDt - cDt) / 86400000) + 1;
-            return { startDate: clearDay, endDate: todayKey, totalDays: Math.max(1, diff) };
-          }
-        }
-      }
-
-      // 全部（或尚未清存時的本輪）：取所選帳本最早有效紀錄日期
+      // 本輪（cycle）與全部（all）：取所選帳本（本輪內）最早有效紀錄日期
       const dates = (validLogs || []).map(x => String(x.date || '').split(' ')[0]).filter(Boolean).sort();
       if (dates.length > 0) {
         const eDt = parseDateKeyToObj(dates[0]);
@@ -5382,6 +5370,60 @@
       syncAllStatsSliders();
     }
 
+    function computeEffectiveDailyAvgStats(logs) {
+      const todayKey = getTodayDateKey();
+      const todayDt = parseDateKeyToObj(todayKey);
+      const yesterdayDt = new Date(todayDt);
+      yesterdayDt.setDate(todayDt.getDate() - 1);
+      const yesterdayKey = formatObjToDateKey(yesterdayDt);
+
+      const expLogs = (logs || []).filter(item => item.type === '支出' && item.excludeStats !== true);
+      const expDates = expLogs
+        .map(item => String(item.date || '').split(' ')[0])
+        .filter(Boolean)
+        .sort();
+
+      if (expDates.length === 0) {
+        return { hasExpense: false, avgDaily: 0, days: 0, label: '日均支出', sub: '尚無支出' };
+      }
+
+      const startExpDay = expDates[0];
+      const startDt = parseDateKeyToObj(startExpDay);
+
+      if (!startDt || startExpDay >= todayKey || startDt > yesterdayDt) {
+        let todayExp = 0;
+        expLogs.forEach(item => {
+          if (String(item.date || '').split(' ')[0] === todayKey) {
+            todayExp += Math.abs(Number(item.amount) || 0);
+          }
+        });
+        return {
+          hasExpense: true,
+          avgDaily: Math.round(todayExp),
+          days: 1,
+          label: '日均支出',
+          sub: '1天日均'
+        };
+      }
+
+      const fullDays = Math.max(1, Math.round((yesterdayDt - startDt) / 86400000) + 1);
+      let expUntilYesterday = 0;
+      expLogs.forEach(item => {
+        const dk = String(item.date || '').split(' ')[0];
+        if (dk && dk >= startExpDay && dk <= yesterdayKey) {
+          expUntilYesterday += Math.abs(Number(item.amount) || 0);
+        }
+      });
+
+      return {
+        hasExpense: true,
+        avgDaily: Math.round(expUntilYesterday / fullDays),
+        days: fullDays,
+        label: '日均支出',
+        sub: `${fullDays}天日均`
+      };
+    }
+
     function renderStatsKPIs(logs, win) {
       let totalExp = 0;
       let totalInc = 0;
@@ -5398,10 +5440,13 @@
         }
       });
 
-      const totalDays = Math.max(1, win.totalDays || 1);
-      const avgDaily = Math.round(totalExp / totalDays);
-      document.getElementById('kpi-avg-spend').textContent = `${avgDaily.toLocaleString()} 元`;
-      document.getElementById('kpi-avg-sub').textContent = `${totalDays} 天區間`;
+      const avgStats = computeEffectiveDailyAvgStats(logs);
+      const avgLabelEl = document.getElementById('kpi-avg-label');
+      const avgEl = document.getElementById('kpi-avg-spend');
+      const avgSubEl = document.getElementById('kpi-avg-sub');
+      if (avgLabelEl) avgLabelEl.textContent = avgStats.label;
+      avgEl.textContent = `${avgStats.avgDaily.toLocaleString()} 元`;
+      avgSubEl.textContent = avgStats.sub;
 
       let peakAmt = 0;
       let peakDate = '';
@@ -5560,7 +5605,9 @@
         return;
       }
 
-      const avgExpLine = totalExp / buckets.length;
+      const avgExpLine = useMonthly
+        ? (totalExp / buckets.length)
+        : (computeEffectiveDailyAvgStats(logs).avgDaily);
       const allNonZero = buckets.flatMap(b => [b.inc, b.exp]).filter(v => v > 0).sort((a, b) => a - b);
       const maxActual = Math.max(100, avgExpLine, ...buckets.map(b => Math.max(b.inc, b.exp)));
       let maxVal = maxActual;
