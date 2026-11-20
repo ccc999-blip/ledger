@@ -219,6 +219,7 @@
       line-height: 1.2;
     }
     .balance-numbers {
+      position: relative;
       display: flex;
       align-items: baseline;
       gap: 8px;
@@ -227,11 +228,14 @@
       margin: 0;
     }
     .balance-rem {
+      display: inline-block;
+      transform-origin: left center;
       font-size: 42px;
       font-weight: 700;
       color: var(--income);
       letter-spacing: -1px;
       line-height: 1;
+      border-radius: 6px;
     }
     .balance-rem.negative {
       color: var(--expense);
@@ -295,6 +299,7 @@
 
     /* 存錢筒入口膠囊 */
     .piggy-bank-btn {
+      position: relative;
       display: inline-flex;
       align-items: center;
       gap: 7px;
@@ -2145,6 +2150,45 @@
     .swipe-item-wrapper.search-result-row .log-item.is-pressed {
       transform: scale(0.98);
     }
+    .btn-submit.submit-ok-exp {
+      background: var(--expense) !important;
+      transform: scale(0.97);
+    }
+    .btn-submit.submit-ok-inc {
+      background: var(--income) !important;
+      transform: scale(0.97);
+    }
+    .num-flash-base {
+      transition: color 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .num-flash-exp {
+      color: #D4623B !important;
+      transition: color 0.1s ease !important;
+    }
+    .num-flash-inc {
+      color: #C89D54 !important;
+      transition: color 0.1s ease !important;
+    }
+    @keyframes floatDeltaUp {
+      0% { opacity: 0; transform: translateY(6px) scale(0.9); }
+      20% { opacity: 1; transform: translateY(-4px) scale(1); }
+      100% { opacity: 0; transform: translateY(-22px) scale(0.96); }
+    }
+    .submit-float-delta {
+      position: absolute;
+      top: -14px;
+      right: -4px;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 10;
+      animation: floatDeltaUp 0.94s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .submit-float-delta.expense { color: var(--expense); }
+    .submit-float-delta.income { color: var(--income); }
   </style>
 </head>
 <body>
@@ -2169,7 +2213,7 @@
           </svg>
           <span>匯出</span>
         </button>
-        <button type="button" class="btn-top-tool" onclick="triggerImportFile()" title="匯入備份檔並覆蓋">
+        <button type="button" class="btn-top-tool" onclick="triggerImportFile()" title="匯入備份檔（無衝突自動合併）">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="17 8 12 3 7 8"/>
@@ -3491,6 +3535,182 @@
       fileInput.click();
     }
 
+    function normalizeLogSignature(item) {
+      return JSON.stringify({
+        date: String(item.date || '').trim(),
+        type: String(item.type || '').trim(),
+        categoryOrNote: String(item.categoryOrNote || '').trim(),
+        payment: String(item.payment || '').trim(),
+        amount: Number(item.amount) || 0,
+        remark: String(item.remark || '').trim(),
+        excludeStats: Boolean(item.excludeStats)
+      });
+    }
+
+    function applyOverwriteImport(parsed, source) {
+      appState.categories = Array.isArray(source.categories) && source.categories.length > 0
+        ? source.categories
+        : ['餐飲', '娛樂（遊戲）', '娛樂（其他）', '網路'];
+      appState.payments = Array.isArray(source.payments) && source.payments.length > 0
+        ? source.payments
+        : ['現金', '悠遊卡', '行動支付', '銀行帳戶'];
+      appState.presets = Array.isArray(source.presets) ? source.presets : [];
+      appState.logs = source.logs;
+      appState.piggyLogs = Array.isArray(source.piggyLogs) ? source.piggyLogs : [];
+      appState.cycleSummaries = Array.isArray(source.cycleSummaries) ? source.cycleSummaries : [];
+
+      selectedPresetIndex = null;
+
+      if (parsed && parsed.versionHistory && Array.isArray(parsed.versionHistory.stack) && parsed.versionHistory.stack.length > 0) {
+        historyStack = parsed.versionHistory.stack;
+        historyPointer = typeof parsed.versionHistory.pointer === 'number'
+          ? Math.min(Math.max(0, parsed.versionHistory.pointer), historyStack.length - 1)
+          : historyStack.length - 1;
+        applySnapshotObject(historyStack[historyPointer]);
+        persistToLocalStorage();
+        updateUndoRedoButtonsUI();
+      } else {
+        commitChangeWithVersion();
+      }
+
+      renderAll();
+      showAppAlert('已成功以匯入檔案取代並覆蓋現存資料！');
+    }
+
+    function applyMergeImport(source) {
+      const existingWalletIds = new Set((appState.logs || []).map(x => x && x.id).filter(Boolean));
+      const existingPiggyIds = new Set((appState.piggyLogs || []).map(x => x && x.id).filter(Boolean));
+
+      let addedWallet = 0;
+      (source.logs || []).forEach(item => {
+        if (!item) return;
+        if (item.id && existingWalletIds.has(item.id)) return;
+        const copy = JSON.parse(JSON.stringify(item));
+        if (!copy.id) copy.id = generateUniqueId ? generateUniqueId() : ('imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+        existingWalletIds.add(copy.id);
+        appState.logs.push(copy);
+        addedWallet++;
+      });
+
+      let addedPiggy = 0;
+      (Array.isArray(source.piggyLogs) ? source.piggyLogs : []).forEach(item => {
+        if (!item) return;
+        if (item.id && existingPiggyIds.has(item.id)) return;
+        const copy = JSON.parse(JSON.stringify(item));
+        if (!copy.id) copy.id = generateUniqueId ? generateUniqueId() : ('imp_p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+        existingPiggyIds.add(copy.id);
+        appState.piggyLogs.push(copy);
+        addedPiggy++;
+      });
+
+      if (Array.isArray(source.categories)) {
+        source.categories.forEach(c => {
+          if (c && !appState.categories.includes(c)) appState.categories.push(c);
+        });
+      }
+      if (Array.isArray(source.payments)) {
+        source.payments.forEach(pm => {
+          if (pm && !appState.payments.includes(pm)) appState.payments.push(pm);
+        });
+      }
+      if (Array.isArray(source.presets)) {
+        const existingLabels = new Set((appState.presets || []).map(pr => String(pr.label || '').trim()));
+        source.presets.forEach(pr => {
+          const lbl = String(pr && pr.label || '').trim();
+          if (lbl && !existingLabels.has(lbl)) {
+            existingLabels.add(lbl);
+            appState.presets.push(JSON.parse(JSON.stringify(pr)));
+          }
+        });
+      }
+      if (Array.isArray(source.cycleSummaries)) {
+        const existingCycleKeys = new Set((appState.cycleSummaries || []).map(cs => String(cs.id || cs.endDate || '')));
+        source.cycleSummaries.forEach(cs => {
+          const ck = String((cs && (cs.id || cs.endDate)) || '');
+          if (ck && !existingCycleKeys.has(ck)) {
+            existingCycleKeys.add(ck);
+            appState.cycleSummaries.push(JSON.parse(JSON.stringify(cs)));
+          }
+        });
+      }
+
+      selectedPresetIndex = null;
+      commitChangeWithVersion();
+      renderAll();
+
+      if (addedWallet === 0 && addedPiggy === 0) {
+        showAppAlert('匯入檔案與現存紀錄完全相符，沒有需要新增的項目。');
+      } else {
+        showAppAlert(`已無衝突並成功合併匯入！\n新增 ${addedWallet} 筆錢包紀錄、${addedPiggy} 筆存錢筒紀錄。`);
+      }
+    }
+
+    function detectImportConflicts(source) {
+      const conflicts = [];
+
+      const walletById = new Map();
+      (appState.logs || []).forEach(item => {
+        if (item && item.id) walletById.set(item.id, item);
+      });
+      (source.logs || []).forEach(item => {
+        if (item && item.id && walletById.has(item.id)) {
+          const cur = walletById.get(item.id);
+          if (normalizeLogSignature(cur) !== normalizeLogSignature(item)) {
+            conflicts.push(`錢包紀錄（${String(item.date || '').split(' ')[0]} ${item.categoryOrNote || item.type || ''}）內容不一致`);
+          }
+        }
+      });
+
+      const piggyById = new Map();
+      (appState.piggyLogs || []).forEach(item => {
+        if (item && item.id) piggyById.set(item.id, item);
+      });
+      (Array.isArray(source.piggyLogs) ? source.piggyLogs : []).forEach(item => {
+        if (item && item.id && piggyById.has(item.id)) {
+          const cur = piggyById.get(item.id);
+          if (normalizeLogSignature(cur) !== normalizeLogSignature(item)) {
+            conflicts.push(`存錢筒紀錄（${String(item.date || '').split(' ')[0]} ${item.categoryOrNote || item.type || ''}）內容不一致`);
+          }
+        }
+      });
+
+      if (Array.isArray(source.presets)) {
+        const presetByLabel = new Map();
+        (appState.presets || []).forEach(pr => {
+          const lbl = String(pr && pr.label || '').trim();
+          if (lbl) presetByLabel.set(lbl, pr);
+        });
+        source.presets.forEach(pr => {
+          const lbl = String(pr && pr.label || '').trim();
+          if (lbl && presetByLabel.has(lbl)) {
+            const cur = presetByLabel.get(lbl);
+            if (String(cur.category || '') !== String(pr.category || '') || (Number(cur.amount) || 0) !== (Number(pr.amount) || 0)) {
+              conflicts.push(`常用選項「${lbl}」設定不一致`);
+            }
+          }
+        });
+      }
+
+      if (Array.isArray(source.cycleSummaries)) {
+        const cycleByKey = new Map();
+        (appState.cycleSummaries || []).forEach(cs => {
+          const ck = String((cs && (cs.id || cs.endDate)) || '');
+          if (ck) cycleByKey.set(ck, cs);
+        });
+        source.cycleSummaries.forEach(cs => {
+          const ck = String((cs && (cs.id || cs.endDate)) || '');
+          if (ck && cycleByKey.has(ck)) {
+            const cur = cycleByKey.get(ck);
+            if (JSON.stringify(cur) !== JSON.stringify(cs)) {
+              conflicts.push(`清存歸檔（${cs.endDate || ck}）數據不一致`);
+            }
+          }
+        });
+      }
+
+      return conflicts;
+    }
+
     function handleImportFile(event) {
       const file = event.target.files && event.target.files[0];
       if (!file) return;
@@ -3506,39 +3726,16 @@
             return;
           }
 
-          const logCount = source.logs.length + (Array.isArray(source.piggyLogs) ? source.piggyLogs.length : 0);
+          const conflicts = detectImportConflicts(source);
+          if (conflicts.length === 0) {
+            applyMergeImport(source);
+            return;
+          }
+
+          const previewList = conflicts.slice(0, 3).join('、') + (conflicts.length > 3 ? ` 等共 ${conflicts.length} 項` : '');
           showAppConfirm(
-            `確定要匯入「${file.name}」嗎？\n` +
-            `（內含 ${logCount} 筆紀錄，匯入後將覆蓋目前的分類、常用選項與所有記帳資料）`,
-            () => {
-              appState.categories = Array.isArray(source.categories) && source.categories.length > 0
-                ? source.categories
-                : ['餐飲', '娛樂（遊戲）', '娛樂（其他）', '網路'];
-              appState.payments = Array.isArray(source.payments) && source.payments.length > 0
-                ? source.payments
-                : ['現金', '悠遊卡', '行動支付', '銀行帳戶'];
-              appState.presets = Array.isArray(source.presets) ? source.presets : [];
-              appState.logs = source.logs;
-              appState.piggyLogs = Array.isArray(source.piggyLogs) ? source.piggyLogs : [];
-              appState.cycleSummaries = Array.isArray(source.cycleSummaries) ? source.cycleSummaries : [];
-
-              selectedPresetIndex = null;
-
-              if (parsed && parsed.versionHistory && Array.isArray(parsed.versionHistory.stack) && parsed.versionHistory.stack.length > 0) {
-                historyStack = parsed.versionHistory.stack;
-                historyPointer = typeof parsed.versionHistory.pointer === 'number'
-                  ? Math.min(Math.max(0, parsed.versionHistory.pointer), historyStack.length - 1)
-                  : historyStack.length - 1;
-                applySnapshotObject(historyStack[historyPointer]);
-                persistToLocalStorage();
-                updateUndoRedoButtonsUI();
-              } else {
-                commitChangeWithVersion();
-              }
-
-              renderAll();
-              showAppAlert('已成功匯入並還原存檔狀態！');
-            }
+            `偵測到「${file.name}」與現存紀錄有衝突：\n${previewList}\n\n是否要以匯入檔案「取代覆蓋」目前的分類、常用選項與所有記帳資料？`,
+            () => applyOverwriteImport(parsed, source)
           );
         } catch (err) {
           showAppAlert('匯入失敗：無法解析檔案內容，請確認選擇的是正確的 .json 備份檔。');
@@ -4218,8 +4415,46 @@
       }
     }
 
+    let isSubmittingRecord = false;
+
+    function triggerSubmitNumberColorFlash(isPiggy, isExpense, amount) {
+      const flashClass = isExpense ? 'num-flash-exp' : 'num-flash-inc';
+      const numEl = isPiggy
+        ? document.getElementById('overview-piggy-val')
+        : document.getElementById('overview-rem');
+      const todayEl = (!isPiggy && isExpense) ? document.getElementById('overview-today') : null;
+
+      [numEl, todayEl].forEach(el => {
+        if (!el) return;
+        el.classList.add('num-flash-base');
+        el.classList.remove('num-flash-exp', 'num-flash-inc');
+        void el.offsetWidth;
+        el.classList.add(flashClass);
+        setTimeout(() => el.classList.remove(flashClass), 340);
+      });
+
+      const anchorEl = isPiggy
+        ? document.querySelector('.piggy-bank-btn')
+        : document.querySelector('.balance-numbers');
+      if (anchorEl && amount > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'submit-float-delta ' + (isExpense ? 'expense' : 'income');
+        badge.textContent = (isExpense ? '-' : '+') + amount.toLocaleString();
+        if (!isPiggy) {
+          badge.style.left = '0';
+          badge.style.right = 'auto';
+          badge.style.top = '-18px';
+        }
+        anchorEl.appendChild(badge);
+        setTimeout(() => {
+          if (badge.parentNode) badge.parentNode.removeChild(badge);
+        }, 960);
+      }
+    }
+
     // ========= 新增、清存（含週期歷史快照歸檔）、左滑刪除 =========
     function submitRecord() {
+      if (isSubmittingRecord) return;
       closeCalcKeyboard();
       const amount = Math.abs(Number(computeExpressionValue(calcInput)) || 0);
       if (!amount || amount <= 0) {
@@ -4275,11 +4510,28 @@
         newLog.categoryOrNote = document.getElementById('input-note').value.trim() || '收入';
       }
 
-      targetLogs.unshift(newLog);
-      commitChangeWithVersion();
-      renderAll();
-      resetRecordFormOnEnter();
-      switchTab('overview', document.querySelectorAll('.nav-tab')[0]);
+      isSubmittingRecord = true;
+      const submitBtn = document.querySelector('.btn-submit');
+      const okClass = isExpense ? 'submit-ok-exp' : 'submit-ok-inc';
+      if (submitBtn) {
+        submitBtn.textContent = '已記帳 ✓';
+        submitBtn.classList.add(okClass);
+      }
+
+      setTimeout(() => {
+        if (submitBtn) {
+          submitBtn.textContent = '確認送出';
+          submitBtn.classList.remove(okClass);
+        }
+        isSubmittingRecord = false;
+
+        targetLogs.unshift(newLog);
+        commitChangeWithVersion();
+        renderAll();
+        resetRecordFormOnEnter();
+        switchTab('overview', document.querySelectorAll('.nav-tab')[0]);
+        requestAnimationFrame(() => triggerSubmitNumberColorFlash(isPiggy, isExpense, amount));
+      }, 220);
     }
 
     function buildCurrentCycleSummary(nowStr) {
