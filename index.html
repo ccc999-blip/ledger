@@ -3542,7 +3542,7 @@
         categoryOrNote: String(item.categoryOrNote || '').trim(),
         payment: String(item.payment || '').trim(),
         amount: Number(item.amount) || 0,
-        remark: String(item.remark || '').trim(),
+        memo: String(item.memo || item.remark || '').trim(),
         excludeStats: Boolean(item.excludeStats)
       });
     }
@@ -3586,7 +3586,7 @@
         if (!item) return;
         if (item.id && existingWalletIds.has(item.id)) return;
         const copy = JSON.parse(JSON.stringify(item));
-        if (!copy.id) copy.id = generateUniqueId ? generateUniqueId() : ('imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+        if (!copy.id) copy.id = 'imp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
         existingWalletIds.add(copy.id);
         appState.logs.push(copy);
         addedWallet++;
@@ -3597,7 +3597,7 @@
         if (!item) return;
         if (item.id && existingPiggyIds.has(item.id)) return;
         const copy = JSON.parse(JSON.stringify(item));
-        if (!copy.id) copy.id = generateUniqueId ? generateUniqueId() : ('imp_p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+        if (!copy.id) copy.id = 'imp_p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
         existingPiggyIds.add(copy.id);
         appState.piggyLogs.push(copy);
         addedPiggy++;
@@ -3613,13 +3613,17 @@
           if (pm && !appState.payments.includes(pm)) appState.payments.push(pm);
         });
       }
+      let addedPresets = 0;
       if (Array.isArray(source.presets)) {
-        const existingLabels = new Set((appState.presets || []).map(pr => String(pr.label || '').trim()));
+        const existingNames = new Set((appState.presets || []).map(pr => String((pr && (pr.name || pr.label)) || '').trim()));
         source.presets.forEach(pr => {
-          const lbl = String(pr && pr.label || '').trim();
-          if (lbl && !existingLabels.has(lbl)) {
-            existingLabels.add(lbl);
-            appState.presets.push(JSON.parse(JSON.stringify(pr)));
+          const pName = String((pr && (pr.name || pr.label)) || '').trim();
+          if (pName && !existingNames.has(pName)) {
+            existingNames.add(pName);
+            const copyPr = JSON.parse(JSON.stringify(pr));
+            copyPr.name = pName;
+            appState.presets.push(copyPr);
+            addedPresets++;
           }
         });
       }
@@ -3638,10 +3642,11 @@
       commitChangeWithVersion();
       renderAll();
 
-      if (addedWallet === 0 && addedPiggy === 0) {
+      if (addedWallet === 0 && addedPiggy === 0 && addedPresets === 0) {
         showAppAlert('匯入檔案與現存紀錄完全相符，沒有需要新增的項目。');
       } else {
-        showAppAlert(`已無衝突並成功合併匯入！\n新增 ${addedWallet} 筆錢包紀錄、${addedPiggy} 筆存錢筒紀錄。`);
+        const presetNote = addedPresets > 0 ? `、${addedPresets} 項常用選項` : '';
+        showAppAlert(`已無衝突並成功合併匯入！\n新增 ${addedWallet} 筆錢包紀錄、${addedPiggy} 筆存錢筒紀錄${presetNote}。`);
       }
     }
 
@@ -3675,17 +3680,17 @@
       });
 
       if (Array.isArray(source.presets)) {
-        const presetByLabel = new Map();
+        const presetByName = new Map();
         (appState.presets || []).forEach(pr => {
-          const lbl = String(pr && pr.label || '').trim();
-          if (lbl) presetByLabel.set(lbl, pr);
+          const pName = String((pr && (pr.name || pr.label)) || '').trim();
+          if (pName) presetByName.set(pName, pr);
         });
         source.presets.forEach(pr => {
-          const lbl = String(pr && pr.label || '').trim();
-          if (lbl && presetByLabel.has(lbl)) {
-            const cur = presetByLabel.get(lbl);
+          const pName = String((pr && (pr.name || pr.label)) || '').trim();
+          if (pName && presetByName.has(pName)) {
+            const cur = presetByName.get(pName);
             if (String(cur.category || '') !== String(pr.category || '') || (Number(cur.amount) || 0) !== (Number(pr.amount) || 0)) {
-              conflicts.push(`常用選項「${lbl}」設定不一致`);
+              conflicts.push(`常用選項「${pName}」設定不一致`);
             }
           }
         });
@@ -4531,7 +4536,7 @@
         resetRecordFormOnEnter();
         switchTab('overview', document.querySelectorAll('.nav-tab')[0]);
         requestAnimationFrame(() => triggerSubmitNumberColorFlash(isPiggy, isExpense, amount));
-      }, 220);
+      }, 175);
     }
 
     function buildCurrentCycleSummary(nowStr) {
