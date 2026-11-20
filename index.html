@@ -1247,10 +1247,12 @@
     .stats-kpi-sub {
       font-family: var(--mono);
       font-variant-numeric: tabular-nums;
-      font-size: 10px;
-      letter-spacing: -0.02em;
+      font-size: clamp(8.5px, 2.5vw, 10px);
+      letter-spacing: -0.025em;
       color: var(--muted-light);
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .stats-card-feed {
@@ -2480,7 +2482,7 @@
           <span id="kpi-peak-date" class="stats-kpi-sub">尚無資料</span>
         </div>
         <div class="stats-kpi-card">
-          <span class="stats-kpi-label">結餘／儲蓄率</span>
+          <span id="kpi-net-label" class="stats-kpi-label">結餘／儲蓄率</span>
           <span id="kpi-save-rate" class="stats-kpi-val income">0%</span>
           <span id="kpi-net-sub" class="stats-kpi-sub">淨額 0 元</span>
         </div>
@@ -4037,6 +4039,7 @@
 
     // ========= 存錢筒全螢幕視窗開關（以撲滿圖標為中心放大展開／縮小收回） =========
     let piggyOrigin = { x: 260, y: 180 };
+    let piggyPillOrigin = { x: 260, y: 180 };
     let piggyCloseTimer = null;
 
     function getPiggyIconCenter() {
@@ -4053,6 +4056,20 @@
       return piggyOrigin;
     }
 
+    function getPiggyPillCenter() {
+      const pillEl = document.querySelector('.piggy-bank-btn');
+      if (pillEl) {
+        const rect = pillEl.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          piggyPillOrigin = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+          };
+        }
+      }
+      return piggyPillOrigin;
+    }
+
     function openPiggyBankModal() {
       if (piggyCloseTimer) {
         clearTimeout(piggyCloseTimer);
@@ -4065,6 +4082,7 @@
 
       const modal = document.getElementById('piggy-modal');
       const origin = getPiggyIconCenter();
+      getPiggyPillCenter();
 
       modal.style.transition = 'none';
       modal.style.transformOrigin = `${origin.x}px ${origin.y}px`;
@@ -4104,7 +4122,7 @@
         return;
       }
 
-      const origin = getPiggyIconCenter();
+      const origin = getPiggyPillCenter();
       modal.style.transformOrigin = `${origin.x}px ${origin.y}px`;
       modal.style.transition = 'transform 0.36s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.36s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.28s ease';
       modal.style.transform = 'scale(0.06)';
@@ -5466,6 +5484,12 @@
       document.getElementById('kpi-peak-date').textContent = peakDate ? peakDate.slice(5) : '尚無資料';
 
       const net = totalInc - totalExp;
+      const isCycleBudgetMode = (statsState.range === 'cycle' && statsState.ledger !== 'piggy');
+      const netLabelEl = document.getElementById('kpi-net-label');
+      if (netLabelEl) {
+        netLabelEl.textContent = isCycleBudgetMode ? '預算剩餘率' : '結餘／儲蓄率';
+      }
+
       const rateEl = document.getElementById('kpi-save-rate');
       if (totalInc <= 0) {
         rateEl.textContent = '—';
@@ -5475,7 +5499,14 @@
         rateEl.textContent = `${pct}%`;
         rateEl.className = 'stats-kpi-val ' + (pct >= 0 ? 'income' : 'expense');
       }
-      document.getElementById('kpi-net-sub').textContent = `淨額 ${net >= 0 ? '+' : ''}${net.toLocaleString()} 元`;
+
+      const netSubEl = document.getElementById('kpi-net-sub');
+      if (isCycleBudgetMode && net > 0 && avgStats.avgDaily > 0) {
+        const sustainDays = (net / avgStats.avgDaily).toFixed(1);
+        netSubEl.textContent = `估算剩餘${sustainDays}天`;
+      } else {
+        netSubEl.textContent = `淨額 ${net >= 0 ? '+' : ''}${net.toLocaleString()} 元`;
+      }
     }
 
     function jumpToPeakSpendDay() {
