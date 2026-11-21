@@ -51,6 +51,7 @@
     html, body {
       margin: 0;
       padding: 0;
+      min-height: 100dvh;
       background-color: var(--bg);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "PingFang TC", "Noto Sans TC", sans-serif;
@@ -181,17 +182,31 @@
 
     /* 頁面主容器 */
     .container {
+      position: relative;
       padding: 0 24px;
       max-width: 520px;
       margin: 0 auto;
+      min-height: calc(100dvh - var(--top-bar-h) - var(--nav-total-space));
+      overflow-x: clip;
     }
     .page {
       display: none;
     }
-    .page.active {
+    .page.active,
+    .page.swipe-incoming {
       display: block;
     }
-    #page-overview.active {
+    .page.swipe-incoming {
+      position: absolute;
+      top: 0;
+      left: 24px;
+      right: 24px;
+      width: calc(100% - 48px);
+      pointer-events: none;
+      z-index: 5;
+    }
+    #page-overview.active,
+    #page-overview.swipe-incoming {
       display: flex;
       flex-direction: column;
       min-height: calc(100dvh - var(--top-bar-h) - var(--nav-total-space));
@@ -454,7 +469,8 @@
     #page-record {
       padding-top: 14px;
     }
-    #page-record.active {
+    #page-record.active,
+    #page-record.swipe-incoming {
       display: flex;
       flex-direction: column;
       min-height: calc(100dvh - var(--top-bar-h) - var(--nav-total-space));
@@ -3837,12 +3853,230 @@
 
     window.addEventListener('resize', syncAllStatsSliders);
 
+    function initPageSwipeNavigation() {
+      const TAB_ORDER = ['overview', 'record', 'history', 'stats'];
+      const EXCLUDE_SELECTOR = [
+        'button', 'a', 'input', 'select', 'textarea', 'label',
+        '.section-block', '.balance-actions-row', '.today-spend-row', '.piggy-bank-btn',
+        '.mode-switch', '.amount-input-wrapper', '.date-picker-bar',
+        '.preset-panel', '.preset-chip', '.select-box', '.input-boxed',
+        '.history-search-bar', '.swipe-item-wrapper', '.log-item', '.search-results-topbar',
+        '.stats-sticky-controls', '.stats-kpi-card', '.stats-card', '.stats-svg-scroll', '.stats-detail-box', '.rank-row',
+        '.bottom-nav', '.top-bar'
+      ].join(',');
+
+      let startX = 0;
+      let startY = 0;
+      let startTime = 0;
+      let dx = 0;
+      let tracking = false;
+      let isHoriz = null;
+      let isAnimating = false;
+      let activeNeighborEl = null;
+      let activeNeighborId = null;
+      let activeDir = 0; // 1 = next (finger right->left), -1 = prev (finger left->right)
+
+      function hasOpenOverlay() {
+        return Boolean(
+          document.querySelector('.modal-overlay.active, .sheet-overlay.active, .piggy-modal-overlay.active, .stats-detail-modal-overlay.active, .calc-keyboard.active')
+        );
+      }
+
+      function clearPageInlineStyles(el) {
+        if (!el) return;
+        el.classList.remove('swipe-incoming');
+        el.style.transition = '';
+        el.style.transform = '';
+        el.style.top = '';
+      }
+
+      function prepareNeighbor(dir) {
+        const curIdx = TAB_ORDER.indexOf(currentTab);
+        const targetIdx = (curIdx + dir + TAB_ORDER.length) % TAB_ORDER.length;
+        const targetId = TAB_ORDER[targetIdx];
+        const el = document.getElementById('page-' + targetId);
+        if (!el) return null;
+
+        el.style.transition = 'none';
+        el.style.top = (window.scrollY || 0) + 'px';
+        el.classList.add('swipe-incoming');
+
+        window.__isSwipePreRender = true;
+        try {
+          if (targetId === 'overview') renderOverview();
+          else if (targetId === 'record') resetRecordFormOnEnter();
+          else if (targetId === 'history') renderHistory();
+          else if (targetId === 'stats') renderStatsPage();
+          syncAllStatsSliders();
+        } finally {
+          window.__isSwipePreRender = false;
+        }
+        return { el, id: targetId };
+      }
+
+      document.addEventListener('touchstart', function(e) {
+        if (isAnimating || !e.touches || e.touches.length !== 1) return;
+        if (hasOpenOverlay()) return;
+        const t = e.target;
+        if (t && t.closest && t.closest(EXCLUDE_SELECTOR)) return;
+
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        startTime = Date.now();
+        dx = 0;
+        tracking = true;
+        isHoriz = null;
+        activeNeighborEl = null;
+        activeNeighborId = null;
+        activeDir = 0;
+      }, { passive: true });
+
+      document.addEventListener('touchmove', function(e) {
+        if (!tracking || isAnimating || !e.touches || e.touches.length !== 1) return;
+        const curDx = e.touches[0].clientX - startX;
+        const curDy = e.touches[0].clientY - startY;
+
+        if (isHoriz === null) {
+          if (Math.abs(curDx) > 10 || Math.abs(curDy) > 10) {
+            isHoriz = Math.abs(curDx) > Math.abs(curDy) * 1.25;
+            if (!isHoriz) {
+              tracking = false;
+              return;
+            }
+          } else {
+            return;
+          }
+        }
+
+        if (e.cancelable) e.preventDefault();
+        dx = curDx;
+
+        const container = document.querySelector('main.container');
+        const containerW = container ? container.clientWidth : (window.innerWidth || 375);
+        const curPageEl = document.getElementById('page-' + currentTab);
+        if (!curPageEl) return;
+
+        const desiredDir = dx < 0 ? 1 : (dx > 0 ? -1 : 0);
+        if (desiredDir !== 0 && desiredDir !== activeDir) {
+          if (activeNeighborEl) clearPageInlineStyles(activeNeighborEl);
+          activeDir = desiredDir;
+          const prep = prepareNeighbor(activeDir);
+          activeNeighborEl = prep ? prep.el : null;
+          activeNeighborId = prep ? prep.id : null;
+        }
+
+        curPageEl.style.transition = 'none';
+        if (activeNeighborEl) {
+          curPageEl.style.transform = `translateX(${dx.toFixed(1)}px)`;
+          const offset = (activeDir === 1 ? containerW + dx : -containerW + dx);
+          activeNeighborEl.style.transform = `translateX(${offset.toFixed(1)}px)`;
+        } else {
+          // 邊界彈性阻尼
+          const damped = Math.sign(dx) * Math.min(42, Math.abs(dx) * 0.22);
+          curPageEl.style.transform = `translateX(${damped.toFixed(1)}px)`;
+        }
+      }, { passive: false });
+
+      function finishSwipe() {
+        if (!tracking) return;
+        tracking = false;
+        if (!isHoriz) return;
+
+        const container = document.querySelector('main.container');
+        const containerW = container ? container.clientWidth : (window.innerWidth || 375);
+        const curPageEl = document.getElementById('page-' + currentTab);
+        if (!curPageEl) return;
+
+        const elapsed = Math.max(1, Date.now() - startTime);
+        const velocity = Math.abs(dx) / elapsed;
+        const shouldSwitch = Boolean(
+          activeNeighborEl &&
+          activeNeighborId &&
+          (Math.abs(dx) > containerW * 0.26 || (Math.abs(dx) > 42 && velocity > 0.35))
+        );
+
+        isAnimating = true;
+        const curve = 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)';
+        curPageEl.style.transition = curve;
+        if (activeNeighborEl) activeNeighborEl.style.transition = curve;
+
+        if (shouldSwitch) {
+          const targetId = activeNeighborId;
+          const targetIdx = TAB_ORDER.indexOf(targetId);
+          const targetNavBtn = document.querySelectorAll('.nav-tab')[targetIdx];
+          const outX = activeDir === 1 ? -containerW : containerW;
+
+          curPageEl.style.transform = `translateX(${outX}px)`;
+          activeNeighborEl.style.transform = 'translateX(0px)';
+
+          // 立即同步底部膠囊、頂部標題與右側按鈕
+          document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+          if (targetNavBtn) targetNavBtn.classList.add('active');
+          positionSegSlider(document.getElementById('bottom-nav-switch'));
+          if (TAB_TITLES[targetId]) {
+            document.getElementById('header-title-zh').textContent = TAB_TITLES[targetId].zh;
+            document.getElementById('header-title-en').textContent = TAB_TITLES[targetId].en;
+          }
+          const ioGroup = document.getElementById('top-io-group');
+          const histGroup = document.getElementById('top-history-group');
+          if (ioGroup && histGroup) {
+            ioGroup.style.display = (targetId === 'history') ? 'none' : 'flex';
+            histGroup.style.display = (targetId === 'history') ? 'flex' : 'none';
+          }
+
+          const neighborRef = activeNeighborEl;
+          let finished = false;
+          const completeSwitch = () => {
+            if (finished) return;
+            finished = true;
+            neighborRef.removeEventListener('transitionend', onEnd);
+            curPageEl.style.transition = 'none';
+            neighborRef.style.transition = 'none';
+            switchTab(targetId, targetNavBtn, true, true);
+            clearPageInlineStyles(curPageEl);
+            clearPageInlineStyles(neighborRef);
+            if ((window.scrollY || 0) > 0) {
+              window.scrollTo({ top: 0, behavior: 'auto' });
+            }
+            isAnimating = false;
+          };
+          const onEnd = (ev) => {
+            if (ev.target === neighborRef && ev.propertyName === 'transform') {
+              completeSwitch();
+            }
+          };
+          neighborRef.addEventListener('transitionend', onEnd);
+          setTimeout(completeSwitch, 320);
+        } else {
+          curPageEl.style.transform = 'translateX(0px)';
+          if (activeNeighborEl) {
+            const backX = activeDir === 1 ? containerW : -containerW;
+            activeNeighborEl.style.transform = `translateX(${backX}px)`;
+          }
+          const neighborRef = activeNeighborEl;
+          setTimeout(() => {
+            clearPageInlineStyles(curPageEl);
+            clearPageInlineStyles(neighborRef);
+            isAnimating = false;
+          }, 280);
+        }
+
+        activeNeighborEl = null;
+        activeNeighborId = null;
+        activeDir = 0;
+      }
+
+      document.addEventListener('touchend', finishSwipe, { passive: true });
+      document.addEventListener('touchcancel', finishSwipe, { passive: true });
+    }
+
     window.onload = function() {
       loadStateFromLocal();
       setRecordDateToToday();
       renderAll();
       attachEdgeSwipeBack(document.getElementById('stats-detail-modal'), closeStatsDetailModal);
       attachEdgeSwipeBack(document.getElementById('piggy-modal'), () => closePiggyBankModal(true));
+      initPageSwipeNavigation();
       syncAllStatsSliders();
     };
 
@@ -3859,7 +4093,7 @@
       updateUndoRedoButtonsUI();
     }
 
-    function switchTab(tabName, btnEl, skipScrollTop = false) {
+    function switchTab(tabName, btnEl, skipScrollTop = false, skipRender = false) {
       const prevTab = currentTab;
       currentTab = tabName;
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -3880,14 +4114,16 @@
         resetSearchBarInput('wallet');
       }
 
-      if (tabName === 'record' && prevTab !== 'record') {
-        resetRecordFormOnEnter();
-      } else if (tabName === 'overview') {
-        renderOverview();
-      } else if (tabName === 'history') {
-        renderHistory();
-      } else if (tabName === 'stats') {
-        renderStatsPage();
+      if (!skipRender) {
+        if (tabName === 'record' && prevTab !== 'record') {
+          resetRecordFormOnEnter();
+        } else if (tabName === 'overview') {
+          renderOverview();
+        } else if (tabName === 'history') {
+          renderHistory();
+        } else if (tabName === 'stats') {
+          renderStatsPage();
+        }
       }
 
       updateTopRightActionButtons();
@@ -4280,6 +4516,7 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: window.__isSwipePreRender ? false : undefined,
           layout: {
             padding: 4
           },
@@ -4554,7 +4791,7 @@
         resetRecordFormOnEnter();
         switchTab('overview', document.querySelectorAll('.nav-tab')[0]);
         requestAnimationFrame(() => triggerSubmitNumberColorFlash(isPiggy, isExpense, amount));
-      }, 175);
+      }, 158);
     }
 
     function buildCurrentCycleSummary(nowStr) {
