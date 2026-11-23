@@ -1427,8 +1427,66 @@
       gap: 9px;
     }
     .rank-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       cursor: pointer;
-      padding: 2px 0;
+      padding: 3px 0;
+    }
+    .rank-main {
+      flex: 1;
+      min-width: 0;
+      transition: opacity 0.25s ease;
+    }
+    .rank-row.is-excluded .rank-main {
+      opacity: 0.48;
+    }
+    .rank-row.is-excluded .rank-name,
+    .rank-row.is-excluded .rank-val,
+    .rank-row.is-excluded .rank-val b {
+      color: var(--muted);
+    }
+    .rank-row.is-excluded .rank-fill {
+      background: var(--muted-light);
+    }
+    .cat-exclude-switch {
+      position: relative;
+      width: 38px;
+      height: 22px;
+      border-radius: 999px;
+      border: none;
+      background: #D5D2CA;
+      padding: 2px;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      transition: background-color 0.25s ease, transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
+    }
+    .cat-exclude-switch.on {
+      background: var(--income);
+    }
+    .cat-exclude-knob {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #FFFFFF;
+      box-shadow: 0 1px 3px rgba(44, 44, 42, 0.22);
+      transform: translateX(0);
+      transition: transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+    }
+    .cat-exclude-switch.on .cat-exclude-knob {
+      transform: translateX(16px);
+    }
+
+    .log-item.log-excluded-stats .log-left,
+    .log-item.log-excluded-stats .log-right {
+      opacity: 0.56;
+    }
+    .log-item.log-excluded-stats .log-cat-name,
+    .log-item.log-excluded-stats .log-amt.expense {
+      color: var(--muted) !important;
     }
     .rank-top {
       display: flex;
@@ -2765,7 +2823,8 @@
       logs: [],
       piggyRemaining: 0,
       piggyLogs: [],
-      cycleSummaries: []
+      cycleSummaries: [],
+      excludedStatsCategories: []
     };
 
     let historyStack = [];
@@ -2854,6 +2913,15 @@
       const mm = String(now.getMonth() + 1).padStart(2, '0');
       const dd = String(now.getDate()).padStart(2, '0');
       return `${yyyy}/${mm}/${dd}`;
+    }
+
+    function normalizeDateKey(rawDate) {
+      const s = String(rawDate || '').trim();
+      if (!s) return '';
+      const datePart = s.split(' ')[0].replace(/-/g, '/');
+      const m = datePart.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+      if (!m) return datePart;
+      return `${m[1]}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}`;
     }
 
     function getTodayIsoDate() {
@@ -3142,8 +3210,8 @@
       });
 
       logsArray.sort((a, b) => {
-        const dayA = String(a.date || '').split(' ')[0];
-        const dayB = String(b.date || '').split(' ')[0];
+        const dayA = normalizeDateKey(a.date);
+        const dayB = normalizeDateKey(b.date);
         if (dayA !== dayB) {
           return dayB.localeCompare(dayA);
         }
@@ -3158,7 +3226,7 @@
       chronological.forEach((item, idx) => {
         const amt = Math.abs(Number(item.amount) || 0);
         item.amount = amt;
-        if (item.type === '清空') {
+        if (item.type === '清空' || item.type === 'clear') {
           runningRem = 0;
           runningTot = 0;
           item.categoryOrNote = item.categoryOrNote || '執行清存';
@@ -3211,6 +3279,9 @@
       if (!Array.isArray(appState.cycleSummaries)) {
         appState.cycleSummaries = [];
       }
+      if (!Array.isArray(appState.excludedStatsCategories)) {
+        appState.excludedStatsCategories = [];
+      }
 
       // 錢包重算（同步動態重建 cycleSummaries 週期歸檔，確保刪除紀錄／刪除清存／上一步皆完全一致）
       const walletRes = sortAndComputeLogs(appState.logs, false);
@@ -3220,7 +3291,7 @@
       const rebuiltCycles = [];
       let cStart = '', cEnd = '', cBudget = 0, cExpense = 0, cRem = 0;
       walletRes.chronological.forEach(item => {
-        if (item.type === '清空') {
+        if (item.type === '清空' || item.type === 'clear') {
           const settledDay = String(item.date || '').split(' ')[0] || '';
           rebuiltCycles.push({
             id: item.cycleId || ('cycle_' + item.id),
@@ -3258,9 +3329,8 @@
       for (let i = walletRes.lastClearIdx + 1; i < walletRes.chronological.length; i++) {
         const item = walletRes.chronological[i];
         if (item.type === '支出') {
-          const rawCat = String(item.categoryOrNote || '未分類');
-          const baseCat = rawCat.split('（')[0] || '未分類';
-          pieStats[baseCat] = (pieStats[baseCat] || 0) + (Number(item.amount) || 0);
+          const fullCat = String(item.categoryOrNote || '未分類').trim() || '未分類';
+          pieStats[fullCat] = (pieStats[fullCat] || 0) + Math.abs(Number(item.amount) || 0);
         }
       }
       appState.pieStats = pieStats;
@@ -3273,16 +3343,16 @@
     }
 
     function calculateTodaySpend() {
-      const todayPrefix = getTodayDateKey();
+      const todayKey = getTodayDateKey();
       let sum = 0;
       const logs = appState.logs || [];
       for (let i = 0; i < logs.length; i++) {
         const item = logs[i];
-        if (item.type === '清空') {
+        if (item.type === '清空' || item.type === 'clear') {
           break;
         }
-        if (item.type === '支出' && String(item.date || '').startsWith(todayPrefix)) {
-          sum += Number(item.amount) || 0;
+        if (item.type === '支出' && normalizeDateKey(item.date) === todayKey) {
+          sum += Math.abs(Number(item.amount) || 0);
         }
       }
       return sum;
@@ -3306,7 +3376,8 @@
         presets: appState.presets,
         logs: appState.logs,
         piggyLogs: appState.piggyLogs,
-        cycleSummaries: appState.cycleSummaries
+        cycleSummaries: appState.cycleSummaries,
+        excludedStatsCategories: appState.excludedStatsCategories
       }));
       if (viewContext) {
         snap.viewContext = JSON.parse(JSON.stringify(viewContext));
@@ -3322,6 +3393,7 @@
       appState.logs = JSON.parse(JSON.stringify(snap.logs || []));
       appState.piggyLogs = JSON.parse(JSON.stringify(snap.piggyLogs || []));
       appState.cycleSummaries = JSON.parse(JSON.stringify(snap.cycleSummaries || []));
+      appState.excludedStatsCategories = JSON.parse(JSON.stringify(snap.excludedStatsCategories || []));
       recalculateState();
     }
 
@@ -3333,7 +3405,8 @@
           presets: appState.presets,
           logs: appState.logs,
           piggyLogs: appState.piggyLogs,
-          cycleSummaries: appState.cycleSummaries
+          cycleSummaries: appState.cycleSummaries,
+          excludedStatsCategories: appState.excludedStatsCategories
         }));
         localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify({
           stack: historyStack,
@@ -3496,6 +3569,7 @@
             appState.logs = Array.isArray(parsed.logs) ? parsed.logs : [];
             appState.piggyLogs = Array.isArray(parsed.piggyLogs) ? parsed.piggyLogs : [];
             appState.cycleSummaries = Array.isArray(parsed.cycleSummaries) ? parsed.cycleSummaries : [];
+            appState.excludedStatsCategories = Array.isArray(parsed.excludedStatsCategories) ? parsed.excludedStatsCategories : [];
           }
         }
         recalculateState();
@@ -3525,7 +3599,8 @@
           logs: appState.logs,
           piggyRemaining: appState.piggyRemaining,
           piggyLogs: appState.piggyLogs,
-          cycleSummaries: appState.cycleSummaries
+          cycleSummaries: appState.cycleSummaries,
+          excludedStatsCategories: appState.excludedStatsCategories
         },
         versionHistory: {
           stack: historyStack,
@@ -3576,6 +3651,7 @@
       appState.logs = source.logs;
       appState.piggyLogs = Array.isArray(source.piggyLogs) ? source.piggyLogs : [];
       appState.cycleSummaries = Array.isArray(source.cycleSummaries) ? source.cycleSummaries : [];
+      appState.excludedStatsCategories = Array.isArray(source.excludedStatsCategories) ? source.excludedStatsCategories : [];
 
       selectedPresetIndex = null;
 
@@ -3652,6 +3728,13 @@
           if (ck && !existingCycleKeys.has(ck)) {
             existingCycleKeys.add(ck);
             appState.cycleSummaries.push(JSON.parse(JSON.stringify(cs)));
+          }
+        });
+      }
+      if (Array.isArray(source.excludedStatsCategories)) {
+        source.excludedStatsCategories.forEach(cat => {
+          if (cat && !appState.excludedStatsCategories.includes(cat)) {
+            appState.excludedStatsCategories.push(cat);
           }
         });
       }
@@ -3852,6 +3935,18 @@
     }
 
     window.addEventListener('resize', syncAllStatsSliders);
+    let lastActiveDayKey = getTodayDateKey();
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState !== 'visible') return;
+      const nowDay = getTodayDateKey();
+      if (nowDay !== lastActiveDayKey) {
+        lastActiveDayKey = nowDay;
+        setRecordDateToToday();
+        renderAll();
+      } else {
+        renderOverview();
+      }
+    });
 
     function initPageSwipeNavigation() {
       const TAB_ORDER = ['overview', 'record', 'history', 'stats'];
@@ -4225,7 +4320,7 @@
         }
 
         if (item.type === '支出') {
-          const dayKey = String(item.date || '').split(' ')[0] || '未知日期';
+          const dayKey = normalizeDateKey(item.date) || '未知日期';
           if (!currentDayGroup || currentDayGroup.dayKey !== dayKey) {
             if (currentDayGroup) groups.push(currentDayGroup);
             currentDayGroup = { isClear: false, dayKey: dayKey, total: 0 };
@@ -4405,8 +4500,15 @@
       const todaySpend = calculateTodaySpend();
       document.getElementById('overview-today').textContent = todaySpend.toLocaleString() + ' 元';
 
-      const pieStats = appState.pieStats || {};
-      const entries = Object.entries(pieStats)
+      const cyclePieStats = {};
+      getCurrentCycleWalletLogs().forEach(item => {
+        if (item.type === '支出') {
+          const fullCat = String(item.categoryOrNote || '未分類').trim() || '未分類';
+          cyclePieStats[fullCat] = (cyclePieStats[fullCat] || 0) + Math.abs(Number(item.amount) || 0);
+        }
+      });
+      appState.pieStats = cyclePieStats;
+      const entries = Object.entries(cyclePieStats)
         .map(([cat, amt]) => ({ cat, amt: Number(amt) || 0 }))
         .filter(item => item.amt > 0)
         .sort((a, b) => b.amt - a.amt);
@@ -4927,10 +5029,13 @@
       let baseCat = rawCat;
       let presetNote = '';
 
-      const match = rawCat.match(/^(.+?)（(.+)）$/);
-      if (match) {
-        baseCat = match[1];
-        presetNote = match[2];
+      const isKnownCategory = Array.isArray(appState.categories) && appState.categories.includes(rawCat);
+      if (!isKnownCategory) {
+        const match = rawCat.match(/^(.+?)（(.+)）$/);
+        if (match) {
+          baseCat = match[1];
+          presetNote = match[2];
+        }
       }
 
       let extraMemo = String(item.memo || '').trim();
@@ -5232,10 +5337,18 @@
     }
 
     // ========= 共用紀錄列表與搜尋結果渲染器 =========
+    function isCategoryExcludedFromStats(item) {
+      if (!item || item.type !== '支出') return false;
+      const excluded = appState.excludedStatsCategories || [];
+      if (excluded.length === 0) return false;
+      const fullCat = String(item.categoryOrNote || '未分類').trim() || '未分類';
+      return excluded.includes(fullCat);
+    }
+
     function buildLogItemContent(item) {
       const formattedFullDate = formatDateWithWeekday(item.date);
       const div = document.createElement('div');
-      div.className = 'log-item';
+      div.className = 'log-item' + (isCategoryExcludedFromStats(item) ? ' log-excluded-stats' : '');
 
       if (item.type === '收入') {
         div.innerHTML = `
@@ -5298,7 +5411,7 @@
           return;
         }
 
-        const dayKey = String(item.date || '').split(' ')[0] || '';
+        const dayKey = normalizeDateKey(item.date) || '';
         if (!currentBlock || currentBlock.dayKey !== dayKey) {
           if (currentBlock) blocks.push(currentBlock);
           currentBlock = {
@@ -5572,7 +5685,7 @@
         return { startDate: formatObjToDateKey(startDt), endDate: todayKey, totalDays: Math.max(1, diff) };
       }
       // 本輪（cycle）與全部（all）：取所選帳本（本輪內）最早有效紀錄日期
-      const dates = (validLogs || []).map(x => String(x.date || '').split(' ')[0]).filter(Boolean).sort();
+      const dates = (validLogs || []).map(x => normalizeDateKey(x.date)).filter(Boolean).sort();
       if (dates.length > 0) {
         const eDt = parseDateKeyToObj(dates[0]);
         if (eDt && eDt <= todayDt) {
@@ -5606,7 +5719,7 @@
 
       const win = getStatsDateWindow(statsState.ledger, statsState.range, validPool);
       const logs = validPool.filter(item => {
-        const dk = String(item.date || '').split(' ')[0];
+        const dk = normalizeDateKey(item.date);
         return dk && dk >= win.startDate && dk <= win.endDate;
       });
 
@@ -5632,9 +5745,11 @@
       yesterdayDt.setDate(todayDt.getDate() - 1);
       const yesterdayKey = formatObjToDateKey(yesterdayDt);
 
-      const expLogs = (logs || []).filter(item => item.type === '支出' && item.excludeStats !== true);
+      const expLogs = (logs || []).filter(item =>
+        item.type === '支出' && item.excludeStats !== true && !isCategoryExcludedFromStats(item)
+      );
       const expDates = expLogs
-        .map(item => String(item.date || '').split(' ')[0])
+        .map(item => normalizeDateKey(item.date))
         .filter(Boolean)
         .sort();
 
@@ -5648,7 +5763,7 @@
       if (!startDt || startExpDay >= todayKey || startDt > yesterdayDt) {
         let todayExp = 0;
         expLogs.forEach(item => {
-          if (String(item.date || '').split(' ')[0] === todayKey) {
+          if (normalizeDateKey(item.date) === todayKey) {
             todayExp += Math.abs(Number(item.amount) || 0);
           }
         });
@@ -5664,7 +5779,7 @@
       const fullDays = Math.max(1, Math.round((yesterdayDt - startDt) / 86400000) + 1);
       let expUntilYesterday = 0;
       expLogs.forEach(item => {
-        const dk = String(item.date || '').split(' ')[0];
+        const dk = normalizeDateKey(item.date);
         if (dk && dk >= startExpDay && dk <= yesterdayKey) {
           expUntilYesterday += Math.abs(Number(item.amount) || 0);
         }
@@ -5685,7 +5800,7 @@
       const daySpendMap = {};
 
       logs.forEach(item => {
-        const dayKey = String(item.date || '').split(' ')[0];
+        const dayKey = normalizeDateKey(item.date);
         const amt = Math.abs(Number(item.amount) || 0);
         if (item.type === '支出') {
           totalExp += amt;
@@ -5853,13 +5968,13 @@
 
       let totalExp = 0;
       logs.forEach(item => {
-        const dayKey = String(item.date || '').split(' ')[0];
+        const dayKey = normalizeDateKey(item.date);
         if (!dayKey) return;
         const key = useMonthly ? dayKey.slice(0, 7) : dayKey;
         if (!bucketMap[key]) bucketMap[key] = { key, inc: 0, exp: 0 };
         const amt = Math.abs(Number(item.amount) || 0);
         if (item.type === '收入') bucketMap[key].inc += amt;
-        else if (item.type === '支出') {
+        else if (item.type === '支出' && !isCategoryExcludedFromStats(item)) {
           bucketMap[key].exp += amt;
           totalExp += amt;
         }
@@ -6119,13 +6234,45 @@
     let currentRankItems = [];
     function getExpenseKeyForRank(item) {
       if (statsState.rankMode === 'category') {
-        return String(item.categoryOrNote || '未分類').split('（')[0] || '未分類';
+        return String(item.categoryOrNote || '未分類').trim() || '未分類';
       }
       return String(item.payment || '未指定').trim() || '未指定';
     }
 
+    function toggleExcludeStatsCategory(e, idx) {
+      if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+      const it = currentRankItems[idx];
+      if (!it || statsState.rankMode !== 'category') return;
+      const catName = it.name;
+      if (!Array.isArray(appState.excludedStatsCategories)) {
+        appState.excludedStatsCategories = [];
+      }
+      const pos = appState.excludedStatsCategories.indexOf(catName);
+      if (pos === -1) {
+        appState.excludedStatsCategories.push(catName);
+      } else {
+        appState.excludedStatsCategories.splice(pos, 1);
+      }
+      const statsMainCtx = {
+        mode: 'stats_main',
+        ledger: statsState.ledger,
+        range: statsState.range,
+        rankMode: statsState.rankMode,
+        scrollTop: window.scrollY || 0
+      };
+      commitChangeWithVersion(statsMainCtx);
+      renderStatsPage();
+      renderHistory();
+      renderPiggyHistory();
+    }
+
     function renderStatsRankCard(logs) {
       const listEl = document.getElementById('stats-rank-list');
+      const isCatMode = (statsState.rankMode === 'category');
+
       const map = {};
       let total = 0;
 
@@ -6147,18 +6294,27 @@
         return;
       }
 
+      const excludedList = appState.excludedStatsCategories || [];
       listEl.innerHTML = items.map((it, idx) => {
         const pct = total > 0 ? Math.round((it.sum / total) * 100) : 0;
         const barW = total > 0 ? Math.max(3, (it.sum / items[0].sum) * 100) : 0;
+        const isExcluded = isCatMode && excludedList.includes(it.name);
         return `
-          <div class="rank-row" onclick="selectRankItem(${idx})">
-            <div class="rank-top">
-              <span class="rank-name">${idx + 1}. ${it.name}</span>
-              <span class="rank-val"><b>${it.sum.toLocaleString()} 元</b> (${pct}%)</span>
+          <div class="rank-row ${isExcluded ? 'is-excluded' : ''}" onclick="selectRankItem(${idx})">
+            <div class="rank-main">
+              <div class="rank-top">
+                <span class="rank-name">${idx + 1}. ${it.name}</span>
+                <span class="rank-val"><b>${it.sum.toLocaleString()} 元</b> (${pct}%)</span>
+              </div>
+              <div class="rank-track">
+                <div class="rank-fill" style="width: ${barW.toFixed(1)}%;"></div>
+              </div>
             </div>
-            <div class="rank-track">
-              <div class="rank-fill" style="width: ${barW.toFixed(1)}%;"></div>
-            </div>
+            ${isCatMode ? `
+              <button type="button" class="cat-exclude-switch ${isExcluded ? '' : 'on'}" onclick="toggleExcludeStatsCategory(event, ${idx})" aria-label="切換計入日均與趨勢" title="${isExcluded ? '已排除日均與趨勢，點擊復原' : '已計入日均與趨勢，點擊排除'}">
+                <span class="cat-exclude-knob"></span>
+              </button>
+            ` : ''}
           </div>
         `;
       }).join('');
@@ -6564,6 +6720,9 @@
               p.category = renameMap[p.category];
             }
           });
+          if (Array.isArray(appState.excludedStatsCategories)) {
+            appState.excludedStatsCategories = appState.excludedStatsCategories.map(c => renameMap[c] || c);
+          }
         }
       }
 
