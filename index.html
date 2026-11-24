@@ -3709,13 +3709,23 @@
       }
       let addedPresets = 0;
       if (Array.isArray(source.presets)) {
-        const existingNames = new Set((appState.presets || []).map(pr => String((pr && (pr.name || pr.label)) || '').trim()));
+        const getPresetSig = pr => {
+          const pName = String((pr && (pr.name || pr.label)) || '').trim();
+          const pCat = String((pr && pr.category) || '').trim();
+          const pAmt = Math.abs(Number(pr && pr.amount) || 0);
+          return `${pName}|||${pCat}|||${pAmt}`;
+        };
+        const existingSigs = new Set((appState.presets || []).map(getPresetSig));
         source.presets.forEach(pr => {
           const pName = String((pr && (pr.name || pr.label)) || '').trim();
-          if (pName && !existingNames.has(pName)) {
-            existingNames.add(pName);
+          if (!pName) return;
+          const sig = getPresetSig(pr);
+          if (!existingSigs.has(sig)) {
+            existingSigs.add(sig);
             const copyPr = JSON.parse(JSON.stringify(pr));
             copyPr.name = pName;
+            copyPr.category = String(copyPr.category || '餐飲').trim() || '餐飲';
+            copyPr.amount = Math.abs(Number(copyPr.amount) || 0);
             appState.presets.push(copyPr);
             addedPresets++;
           }
