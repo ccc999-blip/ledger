@@ -3,12 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <!-- iOS Safari Web App 全螢幕設定 -->
+  <!-- iOS Safari Web App 全螢幕與主畫面圖標設定 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="股市策略實驗室">
+  <meta name="apple-mobile-web-app-title" content="stockmaster📉">
   <meta name="theme-color" content="#000000">
-  <title>股市策略實驗室</title>
+  <title>stockmaster📉</title>
+  <link id="appleTouchIconLink" rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAAA9+43HAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAFwSURBVHhe7cExAQAAAMKg9U9tDB+gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgLsG/WAAAZ81n7MAAAAASUVORK5CYII=">
+  <link id="faviconIconLink" rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAAA9+43HAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAFwSURBVHhe7cExAQAAAMKg9U9tDB+gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgLsG/WAAAZ81n7MAAAAASUVORK5CYII=">
 
   <!-- 載入 Tailwind CSS 與清晰無襯線/等寬數字字體 -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -317,12 +319,12 @@
 </head>
 <body>
   <!-- ========================================================================
-       頂部狀態列 (HEADER - 含上一步 Undo / 下一步 Redo 版本快照按鈕)
+       頂部狀態列 (HEADER - 標題 stockmaster📉 + Undo/Redo + 即時連線與匯率同步按鈕)
        ======================================================================== -->
   <header class="top-bar">
     <div class="w-full max-w-3xl mx-auto px-3 sm:px-4 h-[46px] flex items-center justify-between gap-1 min-w-0">
       <div class="flex items-baseline gap-1.5 min-w-0">
-        <span class="text-[13px] sm:text-[15px] font-bold tracking-tight text-[#F4F6F9] truncate">股市策略實驗室</span>
+        <span class="text-[14px] sm:text-[15px] font-bold tracking-tight text-[#F4F6F9] truncate">stockmaster📉</span>
         <span id="headerClock" class="hidden sm:inline text-[11px] text-[#586274] num whitespace-nowrap shrink-0">--:--:--</span>
       </div>
 
@@ -339,8 +341,9 @@
           </button>
         </div>
 
-        <button id="statusBadgeBtn" onclick="hardResetReconnect(false)" title="點擊清除快取與失敗狀態並強制重新連線"
-          class="tap-btn flex items-center gap-1 px-2 py-1 text-[10px] sm:text-[11px] font-medium bg-[#141923] rounded-full whitespace-nowrap max-w-[104px] sm:max-w-none">
+        <!-- 點擊一併強制更新最新行情與 USD/TWD 匯率 -->
+        <button id="statusBadgeBtn" onclick="hardResetReconnect(false)" title="點擊同步最新行情與 USD/TWD 匯率"
+          class="tap-btn flex items-center gap-1 px-2 py-1 text-[10px] sm:text-[11px] font-medium bg-[#141923] rounded-full whitespace-nowrap max-w-[108px] sm:max-w-none">
           <span id="statusDot" class="w-1.5 h-1.5 rounded-full bg-[#FF9900] shrink-0"></span>
           <span id="statusText" class="text-[#FF9900] truncate">連線中</span>
         </button>
@@ -852,7 +855,7 @@
   </div>
 
   <!-- ========================================================================
-       MODAL 3：全螢幕系統設定視窗 (settingsModal - 已移除自選股區塊)
+       MODAL 3：全螢幕系統設定視窗 (settingsModal - 匯率更新已合併至頂部即時狀態按鈕)
        ======================================================================== -->
   <div id="settingsModal" class="modal-backdrop hidden">
     <div class="settings-full-panel">
@@ -878,27 +881,6 @@
 
           <div class="space-y-2.5 pb-4 hairline-b">
             <div class="flex items-center justify-between gap-2">
-              <label class="text-[12px] font-semibold text-[#8A94A6]">美股匯率設定（USD / TWD）</label>
-              <span id="setFxStatusBadge" class="text-[11px] num text-[#FF9900]">1 USD = 32.50 TWD</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <input id="setUsdTwdRate" type="number" step="0.001" min="1" placeholder="32.50" class="flex-1 px-3 py-2 num">
-              <button type="button" onclick="refreshUsdTwdRateFromSettings()"
-                class="tap-btn px-3.5 py-2 text-[12px] font-semibold bg-[#171C26] text-[#38BDF8] rounded-[8px] shrink-0">
-                立即更新匯率
-              </button>
-            </div>
-            <div class="flex items-center justify-between gap-2 text-[11px] text-[#8A94A6]">
-              <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                <input id="setUseManualFx" type="checkbox">
-                <span>鎖定手動匯率（不隨連網自動覆蓋）</span>
-              </label>
-              <span id="setFxUpdatedAt" class="num text-[#586274]">尚未更新</span>
-            </div>
-          </div>
-
-          <div class="space-y-2.5 pb-4 hairline-b">
-            <div class="flex items-center justify-between gap-2">
               <label class="text-[12px] font-semibold text-[#8A94A6]">專屬 Cloudflare Worker 行情中繼網址</label>
               <button type="button" onclick="resetDefaultWorkerUrl()"
                 class="text-[11px] text-[#38BDF8] underline underline-offset-2 shrink-0">恢復預設網址</button>
@@ -906,7 +888,7 @@
             <input id="setWorkerUrl" type="url" placeholder="https://throbbing-queen-5ddbus-stock-relay.yhchen8541.workers.dev" autocomplete="off"
               class="w-full px-3 py-2 num text-[13px]">
             <p class="text-[11px] text-[#586274] leading-relaxed">
-              所有美股及非台股標的皆直接透過此 Worker 抓取完整歷史日 K 線（<span class="num text-[#8A94A6]">range=max&amp;interval=1d</span>），並依各戶頭獨立時間軸套用截止日濾鏡。
+              所有美股及非台股標的皆直接透過此 Worker 抓取完整歷史日 K 線（<span class="num text-[#8A94A6]">range=max&amp;interval=1d</span>）；點擊主畫面頂部「即時 · WORKER」可一併強制同步最新行情與 USD/TWD 匯率。
             </p>
           </div>
 
@@ -1230,6 +1212,165 @@
        ======================================================================== -->
   <script>
     'use strict';
+
+    /* ========================================================================
+       0. PWA 180x180 不透明 RGB PNG 主畫面圖標初始化 (支援離線單檔穩定顯示)
+       ======================================================================== */
+    function initOpaquePwaAppIcon() {
+      try {
+        const size = 180;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (!ctx) return;
+
+        // 1. 不透明深邃夜紫漸層底色 (RGB 無 Alpha 透明通道，避免 iOS 補黑邊)
+        const bgGrad = ctx.createLinearGradient(0, 0, size, size);
+        bgGrad.addColorStop(0, '#141126');
+        bgGrad.addColorStop(0.55, '#1D1838');
+        bgGrad.addColorStop(1, '#0C0A18');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, size, size);
+
+        // 2. 柔和光暈背光
+        const halo = ctx.createRadialGradient(90, 86, 12, 90, 86, 82);
+        halo.addColorStop(0, 'rgba(167, 139, 250, 0.34)');
+        halo.addColorStop(1, 'rgba(20, 17, 38, 0)');
+        ctx.fillStyle = halo;
+        ctx.fillRect(0, 0, size, size);
+
+        // 3. 繪製薰衣草紫雙馬尾與精靈耳角色頭像剪影 (保留安全邊距以適配 iOS 圓角遮罩)
+        // 後髮與雙馬尾
+        ctx.fillStyle = '#5B4B8A';
+        ctx.beginPath();
+        ctx.ellipse(42, 108, 22, 46, -0.18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(138, 108, 22, 46, 0.18, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 深藍緞帶蝴蝶結
+        ctx.fillStyle = '#1E293B';
+        ctx.beginPath();
+        ctx.moveTo(126, 36);
+        ctx.lineTo(148, 26);
+        ctx.lineTo(144, 48);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(126, 38);
+        ctx.lineTo(152, 54);
+        ctx.lineTo(136, 62);
+        ctx.closePath();
+        ctx.fill();
+
+        // 精靈尖耳
+        ctx.fillStyle = '#F7C9B6';
+        ctx.beginPath();
+        ctx.moveTo(132, 82);
+        ctx.lineTo(156, 70);
+        ctx.lineTo(136, 98);
+        ctx.closePath();
+        ctx.fill();
+
+        // 頸部與衣領
+        ctx.fillStyle = '#F3C1AE';
+        ctx.fillRect(78, 126, 24, 24);
+        ctx.fillStyle = '#1E293B';
+        ctx.beginPath();
+        ctx.moveTo(46, 168);
+        ctx.quadraticCurveTo(90, 140, 134, 168);
+        ctx.lineTo(142, 180);
+        ctx.lineTo(38, 180);
+        ctx.closePath();
+        ctx.fill();
+
+        // 淺藍荷葉領
+        ctx.strokeStyle = '#93C5FD';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(64, 152);
+        ctx.quadraticCurveTo(90, 164, 116, 152);
+        ctx.stroke();
+
+        // 臉部輪廓
+        ctx.fillStyle = '#FDE0D2';
+        ctx.beginPath();
+        ctx.moveTo(52, 74);
+        ctx.quadraticCurveTo(52, 128, 90, 134);
+        ctx.quadraticCurveTo(128, 128, 128, 74);
+        ctx.quadraticCurveTo(128, 38, 90, 38);
+        ctx.quadraticCurveTo(52, 38, 52, 74);
+        ctx.closePath();
+        ctx.fill();
+
+        // 紅寶石眼眸
+        const drawEye = (cx, cy) => {
+          ctx.fillStyle = '#2A0A18';
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, 9.5, 6.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#EF4444';
+          ctx.beginPath();
+          ctx.arc(cx, cy + 0.5, 5.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#FFFFFF';
+          ctx.beginPath();
+          ctx.arc(cx - 2, cy - 1.8, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        };
+        drawEye(72, 92);
+        drawEye(106, 92);
+
+        // 眼下淚痣與微紅臉頰
+        ctx.fillStyle = 'rgba(244, 114, 182, 0.28)';
+        ctx.beginPath();
+        ctx.ellipse(68, 104, 9, 4.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(110, 104, 9, 4.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#3B1D2A';
+        ctx.beginPath();
+        ctx.arc(114, 101, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 薰衣草銀紫瀏海與高光
+        const hairGrad = ctx.createLinearGradient(44, 24, 136, 116);
+        hairGrad.addColorStop(0, '#C4B5FD');
+        hairGrad.addColorStop(0.5, '#A78BFA');
+        hairGrad.addColorStop(1, '#6D5CAE');
+        ctx.fillStyle = hairGrad;
+        ctx.beginPath();
+        ctx.moveTo(42, 92);
+        ctx.quadraticCurveTo(42, 24, 92, 24);
+        ctx.quadraticCurveTo(138, 24, 138, 92);
+        ctx.quadraticCurveTo(124, 68, 112, 86);
+        ctx.quadraticCurveTo(102, 62, 90, 88);
+        ctx.quadraticCurveTo(78, 62, 66, 86);
+        ctx.quadraticCurveTo(54, 68, 42, 92);
+        ctx.closePath();
+        ctx.fill();
+
+        // 髮絲亮光挑染
+        ctx.fillStyle = 'rgba(245, 243, 255, 0.65)';
+        ctx.beginPath();
+        ctx.moveTo(82, 30);
+        ctx.quadraticCurveTo(96, 52, 86, 80);
+        ctx.quadraticCurveTo(78, 54, 82, 30);
+        ctx.closePath();
+        ctx.fill();
+
+        const dataUri = canvas.toDataURL('image/png');
+        if (dataUri && dataUri.startsWith('data:image/png;base64,')) {
+          const touchLink = document.getElementById('appleTouchIconLink');
+          const favLink = document.getElementById('faviconIconLink');
+          if (touchLink) touchLink.setAttribute('href', dataUri);
+          if (favLink) favLink.setAttribute('href', dataUri);
+        }
+      } catch (_) {}
+    }
 
     /* ========================================================================
        1. 全域常數與預設帳戶獨立模型 (Per-Account Independent System & Timeline)
@@ -2820,9 +2961,6 @@
 
     async function fetchLiveUsdTwdRate(forceRefresh = false) {
       const s = getActiveSettings();
-      if (!forceRefresh && s.useManualFx) {
-        return getActiveUsdTwdRate();
-      }
       const now = Date.now();
       if (!forceRefresh && s.usdTwdUpdatedAt > 0 && (now - s.usdTwdUpdatedAt) < 1800000) {
         return getActiveUsdTwdRate();
@@ -2859,7 +2997,6 @@
         curSettings.usdTwdRate = fetchedRate;
         curSettings.usdTwdUpdatedAt = Date.now();
         saveState();
-        updateSettingsFxDisplay();
         return fetchedRate;
       } catch (_) {
         return getActiveUsdTwdRate();
@@ -3257,20 +3394,28 @@
       connState.tpexSnapshot = { fetchedAt: 0, map: null, inFlight: null };
 
       if (!silent) {
-        showToast('正在重置連線並重新抓取全歷史行情與匯率...', 'info');
+        showToast('正在同步最新行情與 USD/TWD 匯率...', 'info');
       }
 
-      fetchLiveUsdTwdRate(!silent).then(() => {
+      const prevFxTs = Number(getActiveSettings().usdTwdUpdatedAt || 0);
+      const fxPromise = fetchLiveUsdTwdRate(!silent).then(rate => {
         renderSimTab();
         updateOrderPreview();
-      }).catch(() => {});
+        return rate;
+      }).catch(() => getActiveUsdTwdRate());
 
       const acc = getActiveAccount();
 
       if (appState.activeTab === 'chart') {
-        await loadChartSymbol(getActiveChartState().activeChartSymbol, true);
+        const [, latestFx] = await Promise.all([
+          loadChartSymbol(getActiveChartState().activeChartSymbol, true),
+          fxPromise
+        ]);
         if (!silent && connState.status === 'LIVE') {
-          showToast(`重連成功！已取得 ${formatDisplaySymbol(getActiveChartState().activeChartSymbol)} 全歷史報價`, 'success');
+          showToast(
+            `已同步 ${formatDisplaySymbol(getActiveChartState().activeChartSymbol)} 最新行情 · 匯率 ${Number(latestFx).toFixed(2)}`,
+            'success'
+          );
         }
         return;
       }
@@ -3283,9 +3428,10 @@
       holdingSyms.forEach(s => targetSyms.add(s));
 
       if (targetSyms.size > 0) {
-        const results = await Promise.allSettled(
-          Array.from(targetSyms).map(s => getMarketData(s, true, { silentError: true }))
-        );
+        const [results, latestFx] = await Promise.all([
+          Promise.allSettled(Array.from(targetSyms).map(s => getMarketData(s, true, { silentError: true }))),
+          fxPromise
+        ]);
 
         if (orderSymRaw) {
           const reqSeq = ++orderQuoteRequestSeq;
@@ -3322,17 +3468,29 @@
         if (liveItems.length > 0) {
           updateStatusBadge('LIVE', liveItems[0].sourceLabel || 'LIVE');
           if (!silent) {
-            showToast(`重連成功！已更新 ${liveItems.length} 檔標的即時行情`, 'success');
+            showToast(
+              `已更新 ${liveItems.length} 檔標的即時行情 · 匯率 1 USD = ${Number(latestFx).toFixed(2)} TWD`,
+              'success'
+            );
           }
         } else if (!silent) {
           const reason = connState.lastErrorDetail ? `：${connState.lastErrorDetail}` : '';
-          showToast(`重連失敗${reason}，目前為離線模擬狀態`, 'error');
+          showToast(`行情重連失敗${reason}，匯率 ${Number(latestFx).toFixed(2)}`, 'error');
         }
       } else {
-        const probe = await getMarketData('2330.TW', true, { silentError: true });
+        const [probe, latestFx] = await Promise.all([
+          getMarketData('2330.TW', true, { silentError: true }),
+          fxPromise
+        ]);
         if (probe && probe.source === 'LIVE') {
           updateStatusBadge('LIVE', probe.sourceLabel || 'LIVE');
-          if (!silent) showToast('連線狀態正常', 'success');
+          if (!silent) {
+            const fxUpdated = Number(getActiveSettings().usdTwdUpdatedAt || 0) > prevFxTs;
+            showToast(
+              `連線正常 · 匯率 ${fxUpdated ? '已更新' : '目前'} 1 USD = ${Number(latestFx).toFixed(2)} TWD`,
+              'success'
+            );
+          }
         }
       }
     }
@@ -4771,7 +4929,7 @@
     }
 
     function exportReport(scope) {
-      const header = `股市策略實驗室｜多時間軸交易績效檢討報告（統一 TWD 計價）\n匯出時間：${new Date().toLocaleString('zh-TW')}\n`;
+      const header = `stockmaster📉｜多時間軸交易績效檢討報告（統一 TWD 計價）\n匯出時間：${new Date().toLocaleString('zh-TW')}\n`;
       let body = '';
       if (scope === 'current') {
         body = buildAccountReportText(getActiveAccount());
@@ -6020,42 +6178,6 @@
       }
     }
 
-    function updateSettingsFxDisplay() {
-      const s = getActiveSettings();
-      const rate = getActiveUsdTwdRate();
-      const badge = document.getElementById('setFxStatusBadge');
-      const updatedEl = document.getElementById('setFxUpdatedAt');
-      if (badge) badge.textContent = `1 USD = ${rate.toFixed(2)} TWD`;
-      if (updatedEl) {
-        const ts = Number(s.usdTwdUpdatedAt);
-        if (ts > 0) {
-          const d = new Date(ts);
-          updatedEl.textContent = `更新於 ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        } else {
-          updatedEl.textContent = '預設匯率';
-        }
-      }
-    }
-
-    async function refreshUsdTwdRateFromSettings() {
-      const s = getActiveSettings();
-      const prevManual = s.useManualFx;
-      s.useManualFx = false;
-      document.getElementById('setUseManualFx').checked = false;
-      showToast('正在連網取得最新 USD/TWD 匯率...', 'info');
-      const rate = await fetchLiveUsdTwdRate(true);
-      document.getElementById('setUsdTwdRate').value = rate;
-      updateSettingsFxDisplay();
-      renderSimTab();
-      updateOrderPreview();
-      if (s.usdTwdUpdatedAt > 0) {
-        showToast(`已更新美元匯率：1 USD = ${rate.toFixed(2)} TWD`, 'success');
-      } else {
-        s.useManualFx = prevManual;
-        showToast('匯率連線暫時無法更新，沿用目前匯率', 'warn');
-      }
-    }
-
     function resetDefaultWorkerUrl() {
       document.getElementById('setWorkerUrl').value = DEFAULT_WORKER_URL;
       showToast('已填入預設 Cloudflare Worker 網址', 'info');
@@ -6074,10 +6196,7 @@
       document.getElementById('setMa1').value = s.maPeriods[1];
       document.getElementById('setMa2').value = s.maPeriods[2];
       document.getElementById('setCacheTtl').value = String(s.cacheTtlMs);
-      document.getElementById('setUsdTwdRate').value = getActiveUsdTwdRate();
-      document.getElementById('setUseManualFx').checked = Boolean(s.useManualFx);
       document.getElementById('setWorkerUrl').value = getWorkerBaseUrl();
-      updateSettingsFxDisplay();
       updateColorModeButtons();
       openModal('settingsModal');
     }
@@ -6118,16 +6237,10 @@
       const ma1 = Math.max(2, Math.min(240, Math.round(Number(document.getElementById('setMa1').value) || 20)));
       const ma2 = Math.max(2, Math.min(240, Math.round(Number(document.getElementById('setMa2').value) || 60)));
       const cacheTtlMs = Number(document.getElementById('setCacheTtl').value);
-      const fxVal = Number(document.getElementById('setUsdTwdRate').value);
-      const useManualFx = document.getElementById('setUseManualFx').checked;
       const workerBaseUrl = sanitizeWorkerUrl(document.getElementById('setWorkerUrl').value);
 
       if (feeRate < 0 || discount < 0 || minFee < 0 || stockTax < 0 || etfTax < 0) {
         showToast('費率與折數不可為負數', 'error');
-        return;
-      }
-      if (!Number.isFinite(fxVal) || fxVal <= 0) {
-        showToast('請輸入大於 0 的有效美元匯率', 'error');
         return;
       }
 
@@ -6138,8 +6251,6 @@
       s.etfTaxRate = etfTax;
       s.maPeriods = [ma0, ma1, ma2];
       s.cacheTtlMs = cacheTtlMs;
-      s.usdTwdRate = Number(fxVal.toFixed(4));
-      s.useManualFx = useManualFx;
       s.workerBaseUrl = workerBaseUrl;
 
       saveState();
@@ -6165,7 +6276,7 @@
           exportedAt: new Date().toISOString(),
           account: activeAcc
         };
-        fileName = `stock_lab_account_${getAccountDisplayName(activeAcc)}_${getTodayDateString()}.json`;
+        fileName = `stockmaster_account_${getAccountDisplayName(activeAcc)}_${getTodayDateString()}.json`;
         modalTitle = `單一戶頭備份 JSON（${getAccountDisplayName(activeAcc)}）`;
       } else {
         payload = {
@@ -6174,7 +6285,7 @@
           marketCache: {},
           exportedAt: new Date().toISOString()
         };
-        fileName = `stock_lab_full_backup_${getTodayDateString()}.json`;
+        fileName = `stockmaster_full_backup_${getTodayDateString()}.json`;
         modalTitle = '全部系統資料備份 (JSON)';
       }
 
@@ -6429,6 +6540,8 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+      initOpaquePwaAppIcon();
+      document.title = 'stockmaster📉';
       syncAllAccountsWithReality(false);
       applyColorTheme();
       updateClock();
